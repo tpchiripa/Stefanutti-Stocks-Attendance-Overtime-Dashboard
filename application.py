@@ -1,102 +1,107 @@
-# application.py
 import streamlit as st
 import pandas as pd
-import seaborn as sns
-import matplotlib.pyplot as plt
+import numpy as np
+import plotly.express as px
 from sklearn.linear_model import LinearRegression
 
-# --- Page Config ---
+# ------------------- Page Setup -------------------
 st.set_page_config(
-    page_title="Stefanutti Stocks: Attendance & Overtime Analysis",
+    page_title="Stefanutti Stocks Dashboard",
+    page_icon="📊",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded",
 )
 
-st.markdown("<h1 style='text-align:center; color: navy;'>🕒 Stefanutti Stocks: Attendance & Overtime Dashboard</h1>", unsafe_allow_html=True)
+st.title("📊 Stefanutti Stocks: Attendance & Overtime Dashboard")
 
-# --- File Upload ---
-uploaded_file = st.file_uploader("Upload merged_attendance.csv", type="csv")
+# ------------------- File Upload -------------------
+uploaded_file = st.file_uploader(
+    "Upload your attendance CSV",
+    type=["csv"],
+    help="Drag and drop your CSV file here"
+)
+
 if uploaded_file:
-    df = pd.read_csv(uploaded_file)
-    st.success("✅ Dataset loaded successfully!")
+    try:
+        df = pd.read_csv(uploaded_file)
+        st.success("✅ Dataset loaded successfully!")
 
-    # --- Sidebar Filters ---
-    companies = ['All'] + sorted(df['Company'].dropna().unique().tolist())
-    regions = ['All'] + sorted(df['Region'].dropna().unique().tolist())
-    disciplines = ['All'] + sorted(df['Discipline'].dropna().unique().tolist())
-    projects = ['All'] + sorted(df['ContractCode'].dropna().unique().tolist())
-    employees = ['All'] + sorted(df['EmployeeName'].dropna().unique().tolist())
+        # ------------------- Sidebar Filters -------------------
+        st.sidebar.header("🔍 Filters")
+        regions = ["All"] + sorted(df['Region'].dropna().unique().tolist())
+        disciplines = ["All"] + sorted(df['Discipline'].dropna().unique().tolist())
+        projects = ["All"] + sorted(df['Project'].dropna().unique().tolist())
+        employees = ["All"] + sorted(df['Employee'].dropna().unique().tolist())
+        companies = ["All"] + sorted(df['Company'].dropna().unique().tolist())
 
-    company_filter = st.sidebar.selectbox("Select Company", companies)
-    region_filter = st.sidebar.selectbox("Select Region", regions)
-    discipline_filter = st.sidebar.selectbox("Select Discipline", disciplines)
-    project_filter = st.sidebar.selectbox("Select Project", projects)
-    employee_filter = st.sidebar.selectbox("Select Employee", employees)
+        selected_region = st.sidebar.selectbox("Region", regions)
+        selected_discipline = st.sidebar.selectbox("Discipline", disciplines)
+        selected_project = st.sidebar.selectbox("Project", projects)
+        selected_employee = st.sidebar.selectbox("Employee", employees)
+        selected_company = st.sidebar.selectbox("Company", companies)
 
-    # --- Apply Filters ---
-    df_filtered = df.copy()
-    if company_filter != 'All':
-        df_filtered = df_filtered[df_filtered['Company'] == company_filter]
-    if region_filter != 'All':
-        df_filtered = df_filtered[df_filtered['Region'] == region_filter]
-    if discipline_filter != 'All':
-        df_filtered = df_filtered[df_filtered['Discipline'] == discipline_filter]
-    if project_filter != 'All':
-        df_filtered = df_filtered[df_filtered['ContractCode'] == project_filter]
-    if employee_filter != 'All':
-        df_filtered = df_filtered[df_filtered['EmployeeName'] == employee_filter]
+        df_filtered = df.copy()
+        if selected_region != "All":
+            df_filtered = df_filtered[df_filtered['Region'] == selected_region]
+        if selected_discipline != "All":
+            df_filtered = df_filtered[df_filtered['Discipline'] == selected_discipline]
+        if selected_project != "All":
+            df_filtered = df_filtered[df_filtered['Project'] == selected_project]
+        if selected_employee != "All":
+            df_filtered = df_filtered[df_filtered['Employee'] == selected_employee]
+        if selected_company != "All":
+            df_filtered = df_filtered[df_filtered['Company'] == selected_company]
 
-    # --- Dataset Preview ---
-    st.subheader("📊 Filtered Data Preview")
-    st.dataframe(df_filtered.head(20))
+        # ------------------- KPI Cards -------------------
+        st.subheader("📈 Key Metrics")
+        total_hours = df_filtered['Hours Worked'].sum() if 'Hours Worked' in df_filtered.columns else 0
+        total_overtime = (df_filtered['Hours Worked'] - df_filtered['Standard Hours']).clip(lower=0).sum() if 'Standard Hours' in df_filtered.columns else 0
+        avg_hours = df_filtered['Hours Worked'].mean() if 'Hours Worked' in df_filtered.columns else 0
+        avg_overtime = (df_filtered['Hours Worked'] - df_filtered['Standard Hours']).clip(lower=0).mean() if 'Standard Hours' in df_filtered.columns else 0
 
-    # --- Missing Values Summary ---
-    st.subheader("🛑 Missing Values Summary")
-    missing_summary = pd.DataFrame({
-        'MissingCount': df_filtered.isna().sum(),
-        'MissingPercentage': (df_filtered.isna().sum() / len(df_filtered) * 100).round(2)
-    })
-    st.dataframe(missing_summary)
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Total Hours Worked", f"{total_hours:,.1f}")
+        col2.metric("Total Overtime", f"{total_overtime:,.1f}")
+        col3.metric("Average Hours", f"{avg_hours:,.1f}")
+        col4.metric("Average Overtime", f"{avg_overtime:,.1f}")
 
-    # --- Total Hours & Overtime Summary ---
-    st.subheader("⏱ Total Hours & Overtime Summary")
-    st.write(df_filtered[['TotalHours', 'Normal Time Hours', 'Over Time 1Hours', 'Over Time 2Hours']].describe())
+        # ------------------- Dataset Preview -------------------
+        st.subheader("📋 Dataset Preview")
+        st.dataframe(df_filtered.head(10))
 
-    # --- Scatter Plot: TotalHours vs Overtime ---
-    st.subheader("📈 Total Hours vs Over Time 1 Hours")
-    fig, ax = plt.subplots(figsize=(10,5))
-    sns.scatterplot(
-        data=df_filtered,
-        x='TotalHours',
-        y='Over Time 1Hours',
-        hue='Region',
-        style='EmployeeType',
-        palette='Set2',
-        s=100,
-        ax=ax
-    )
-    ax.set_title("Total Hours vs Over Time 1 Hours", fontsize=16)
-    st.pyplot(fig)
+        # ------------------- Missing Values -------------------
+        st.subheader("🛑 Missing Values Summary")
+        st.dataframe(df_filtered.isna().sum())
 
-    # --- Predictive Analysis: Estimate Total Hours ---
-    st.subheader("🔮 Predictive Analysis: Estimated Total Hours")
-    df_model = df_filtered.dropna(subset=['TotalHours'])  # drop rows with NaN target
-    if len(df_model) > 0:
-        X = df_model[['Normal Time Hours', 'Over Time 1Hours', 'Over Time 2Hours']]
-        y = df_model['TotalHours']
-        model = LinearRegression()
-        model.fit(X, y)
-        df_model['Predicted_TotalHours'] = model.predict(X)
-        st.write(df_model[['EmployeeName', 'TotalHours', 'Predicted_TotalHours']].head(20))
-    else:
-        st.warning("No valid data for predictive analysis after dropping NaNs.")
+        # ------------------- Graphical Analysis -------------------
+        st.subheader("📊 Graphical Analysis")
 
-    # --- Download Filtered Data ---
-    st.subheader("💾 Download Filtered Data")
-    csv = df_filtered.to_csv(index=False).encode('utf-8')
-    st.download_button(
-        label="Download CSV",
-        data=csv,
-        file_name='filtered_attendance.csv',
-        mime='text/csv'
-    )
+        if 'Hours Worked' in df_filtered.columns:
+            fig1 = px.histogram(df_filtered, x='Hours Worked', color='Company', nbins=20,
+                                title="Distribution of Hours Worked by Company", color_discrete_sequence=px.colors.qualitative.Vivid)
+            st.plotly_chart(fig1, use_container_width=True)
+
+        if 'Overtime' in df_filtered.columns or ('Hours Worked' in df_filtered.columns and 'Standard Hours' in df_filtered.columns):
+            df_filtered['Overtime'] = (df_filtered['Hours Worked'] - df_filtered['Standard Hours']).clip(lower=0)
+            fig2 = px.box(df_filtered, x='Company', y='Overtime', color='Company',
+                          title="Overtime Comparison by Company", color_discrete_sequence=px.colors.qualitative.Pastel)
+            st.plotly_chart(fig2, use_container_width=True)
+
+        # ------------------- Predictive Analysis -------------------
+        st.subheader("📈 Predictive Analysis: Estimated Hours")
+        target_col = 'Hours Worked'
+        if target_col in df_filtered.columns:
+            X = df_filtered.select_dtypes(include=np.number).drop(columns=[target_col], errors='ignore')
+            y = df_filtered[target_col].fillna(df_filtered[target_col].mean())
+            X = X.fillna(0)
+
+            if not X.empty:
+                model = LinearRegression()
+                model.fit(X, y)
+                df_filtered['Estimated Hours'] = model.predict(X)
+                st.dataframe(df_filtered[['Employee', 'Hours Worked', 'Estimated Hours']].head(10))
+            else:
+                st.warning("Not enough numeric data for predictive analysis.")
+
+    except Exception as e:
+        st.error(f"❌ Error loading dataset: {e}")
