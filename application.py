@@ -1,51 +1,73 @@
 import streamlit as st
 import pandas as pd
+import plotly.express as px
 
-# Page config
 st.set_page_config(page_title="Stefanutti Stocks: Attendance & Overtime Dashboard", layout="wide")
-st.title("📊 Stefanutti Stocks: Attendance & Overtime Dashboard")
 
-# File upload
+st.title("📊 Stefanutti Stocks: Attendance & Overtime Dashboard")
 uploaded_file = st.file_uploader("Upload your attendance CSV", type=["csv"])
 
-if uploaded_file is not None:
-    try:
-        df = pd.read_csv(uploaded_file)
-        st.success("✅ Dataset loaded successfully!")
-        
-        # Show columns for debugging
-        st.write("Columns in dataset:", df.columns.tolist())
+if uploaded_file:
+    # Load dataset
+    df = pd.read_csv(uploaded_file)
+    st.success("✅ Dataset loaded successfully!")
 
-        # Required columns
-        required_columns = ['EmployeeNumber', 'Name', 'Company', 'Project', 'OvertimeHours', 'AttendanceDate']
-        missing_columns = [col for col in required_columns if col not in df.columns]
+    # Check required columns
+    required_cols = ['EmployeeName', 'Date', 'TotalHours', 'Normal Time Hours', 'Company', 'Region', 'Occupation', 'EmployeeNumber']
+    missing_cols = [col for col in required_cols if col not in df.columns]
+    if missing_cols:
+        st.error(f"❌ Missing columns in the uploaded CSV: {', '.join(missing_cols)}")
+    else:
+        # Convert Date to datetime
+        df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
 
-        if missing_columns:
-            st.error(f"❌ Missing columns in the uploaded CSV: {', '.join(missing_columns)}")
-        else:
-            # Filters
-            companies = df['Company'].unique()
-            selected_company = st.selectbox("Select Company", options=companies)
-            df_company = df[df['Company'] == selected_company]
+        # Sidebar filters
+        st.sidebar.header("Filters")
+        company_filter = st.sidebar.multiselect("Select Company", options=df['Company'].unique(), default=df['Company'].unique())
+        region_filter = st.sidebar.multiselect("Select Region", options=df['Region'].unique(), default=df['Region'].unique())
+        occupation_filter = st.sidebar.multiselect("Select Occupation", options=df['Occupation'].unique(), default=df['Occupation'].unique())
+        date_range = st.sidebar.date_input("Select Date Range", [df['Date'].min(), df['Date'].max()])
 
-            projects = df_company['Project'].unique()
-            selected_project = st.selectbox("Select Project", options=projects)
-            df_filtered = df_company[df_company['Project'] == selected_project]
+        # Apply filters
+        filtered_df = df[
+            (df['Company'].isin(company_filter)) &
+            (df['Region'].isin(region_filter)) &
+            (df['Occupation'].isin(occupation_filter)) &
+            (df['Date'].between(pd.to_datetime(date_range[0]), pd.to_datetime(date_range[1])))
+        ]
 
-            # Show filtered data
-            st.subheader("Filtered Attendance Data")
-            st.dataframe(df_filtered)
+        # KPI cards
+        total_employees = filtered_df['EmployeeNumber'].nunique()
+        total_normal_hours = filtered_df['Normal Time Hours'].sum()
+        total_overtime = filtered_df['TotalHours'].sum() - total_normal_hours
+        avg_overtime = total_overtime / total_employees if total_employees > 0 else 0
 
-            # Overtime summary chart
-            st.subheader("Overtime Summary per Project")
-            overtime_summary = df_filtered.groupby('Project')['OvertimeHours'].sum().reset_index()
-            st.bar_chart(overtime_summary.set_index('Project'))
+        kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+        kpi1.metric("Total Employees", total_employees)
+        kpi2.metric("Total Normal Hours", round(total_normal_hours,2))
+        kpi3.metric("Total Overtime Hours", round(total_overtime,2))
+        kpi4.metric("Average Overtime per Employee", round(avg_overtime,2))
 
-            # Optional: attendance metrics
-            st.subheader("Attendance Summary")
-            attendance_count = df_filtered.groupby('Project')['EmployeeNumber'].nunique().reset_index()
-            attendance_count.rename(columns={'EmployeeNumber': 'Unique Employees'}, inplace=True)
-            st.table(attendance_count)
+        # Show filtered dataframe
+        st.subheader("Filtered Attendance Data")
+        st.dataframe(filtered_df)
 
-    except Exception as e:
-        st.error(f"❌ Error loading dataset: {e}")
+        # Download filtered CSV
+        csv = filtered_df.to_csv(index=False).encode('utf-8')
+        st.download_button("Download Filtered CSV", csv, "filtered_attendance.csv", "text/csv")
+
+        # --- VISUALIZATIONS ---
+        st.subheader("Visual Summary")
+
+        # 1️⃣ Bar chart: Overtime by Employee
+        filtered_df['OvertimeHours'] = filtered_df['TotalHours'] - filtered_df['Normal Time Hours']
+        overtime_per_employee = filtered_df.groupby('EmployeeName')['OvertimeHours'].sum().reset_index()
+        fig_bar = px.bar(overtime_per_employee, x='EmployeeName', y='OvertimeHours', 
+                         title="Overtime Hours per Employee", text='OvertimeHours')
+        st.plotly_chart(fig_bar, use_container_width=True)
+
+        # 2️⃣ Line chart: Total Hours over Time
+        hours_over_time = filtered_df.groupby('Date')['TotalHours'].sum().reset_index()
+        fig_line = px.line(hours_over_time, x='Date', y='TotalHours', 
+                           title="Total Hours Worked Over Time", markers=True)
+        st.plotly_chart(fig_line, use_container_width=True)
